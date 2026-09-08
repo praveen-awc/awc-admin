@@ -1,16 +1,52 @@
-# React + Vite
+# AWC Admin
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Internal content admin for the AWC Software website. Deployed separately from
+the public site so admin code is never shipped to visitors.
 
-Currently, two official plugins are available:
+- **Public site:** `AWC-UI/awc-ui` (React 18, Vite 5, Tailwind 3)
+- **API:** `awc-backend` (Express + MongoDB)
+- **This app:** React 19, Vite 8, Tailwind 4 (CSS-first), TypeScript strict
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Running locally
 
-## React Compiler
+```bash
+npm install
+npm run dev      # http://localhost:5180 (strictPort)
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+The backend must be running on `http://localhost:5001` and its `CORS_ORIGIN`
+must include `http://localhost:5180`. Auth uses httpOnly cookies, so the port
+is not interchangeable — a different origin is rejected by CORS.
 
-## Expanding the ESLint configuration
+Create the first admin account from the backend repo:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm run seed:admin
+```
+
+## Scripts
+
+| Command | Does |
+|---|---|
+| `npm run dev` | Dev server on 5180 |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run build` | Typecheck, then production build to `dist/` |
+| `npm run lint` | ESLint |
+
+## Deployment
+
+Its own AWS Amplify app on `admin.awcsoftware.com`.
+
+**The SPA rewrite must be configured manually in the Amplify console**
+(`/<*>` → `/index.html`, 200). There is no `public/_redirects` convention in
+this org, and without the rewrite every deep link 404s on refresh.
+
+## Editor / sanitizer contract
+
+The TipTap extension set in `src/components/editor/RichTextEditor.tsx` must
+stay aligned with the server allowlist in
+`awc-backend/src/utils/sanitizeHtml.ts`. Anything the editor can produce but
+the sanitizer discards disappears silently when an author saves.
+
+After every save the editor is re-seeded from the server's response, so authors
+always see the sanitized result rather than what they typed.

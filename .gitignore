@@ -23,7 +23,11 @@ dist-ssr
 *.sln
 *.sw?
 
-# Env
+# Env -- only real secrets are ignored; the API URL is not a secret and
+# .env.production is needed at build time.
 .env
-.env.*
-!.env.example
+.env.local
+.env.*.local
+
+# TypeScript incremental build cache
+*.tsbuildinfo

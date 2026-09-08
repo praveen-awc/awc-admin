@@ -1,0 +1,22 @@
+customHeaders:
+  - pattern: '**'
+    headers:
+      # The admin panel must never be indexed.
+      - key: 'X-Robots-Tag'
+        value: 'noindex, nofollow, noarchive'
+      - key: 'Strict-Transport-Security'
+        value: 'max-age=31536000; includeSubDomains'
+      - key: 'X-Frame-Options'
+        value: 'DENY'
+      - key: 'X-Content-Type-Options'
+        value: 'nosniff'
+      - key: 'Referrer-Policy'
+        value: 'strict-origin-when-cross-origin'
+      - key: 'Permissions-Policy'
+        value: 'camera=(), microphone=(), geolocation=()'
+      # connect-src must list the API (cookie auth) and the S3 bucket
+      # (presigned PUT uploads go straight from the browser).
+      - key: 'Content-Security-Policy'
+        value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://api.awcsoftware.com https://awc-s3-bucket.s3.ap-south-1.amazonaws.com https://awc-s3-pvt.s3.ap-south-1.amazonaws.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+      - key: 'Server'
+        value: 'awcsoftware'
