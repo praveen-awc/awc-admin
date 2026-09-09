@@ -5,6 +5,8 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 import { createBlog, getBlog, updateBlog } from "./blog.api";
 import type { BlogCoverImage, BlogSeo, BlogStatus } from "./blog.types";
 import { errorMessage } from "@/lib/api";
+import { PUBLIC_SITE_URL } from "@/lib/constants";
+import { slugify } from "@/lib/slug";
 import { RichTextEditor } from "@/components/editor/RichTextEditor";
 import { ImagePicker } from "@/components/forms/ImagePicker";
 import { TagInput } from "@/components/forms/TagInput";
@@ -12,18 +14,6 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, Textarea } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
-
-const PUBLIC_SITE_URL = "https://www.awcsoftware.com";
-
-/** Mirrors the backend's slugify(strict) so the preview matches what is stored. */
-const slugify = (input: string): string =>
-  input
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
 
 /** <input type="datetime-local"> needs local time with no timezone suffix. */
 const toLocalInput = (iso: string | null): string => {

@@ -70,8 +70,11 @@ export interface PresignResult {
   maxBytes: number;
 }
 
+/** Matches the UploadFolder union in the backend's presign service. */
+export type UploadFolder = "blog" | "news" | "casestudies" | "avatars";
+
 export const presignUpload = async (
-  folder: "blog",
+  folder: UploadFolder,
   fileName: string,
   contentType: string
 ): Promise<PresignResult> => {

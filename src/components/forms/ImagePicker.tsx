@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { ImagePlus, Trash2 } from "lucide-react";
 import { useImageUpload } from "@/components/editor/useImageUpload";
+import type { UploadFolder } from "@/features/blogs/blog.api";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Input";
@@ -8,10 +9,15 @@ import { Field, Input } from "@/components/ui/Input";
 export const ImagePicker = ({
   url,
   alt,
+  folder = "blog",
+  showAlt = true,
   onChange,
 }: {
   url?: string;
   alt?: string;
+  folder?: UploadFolder;
+  /** Hide the alt field where the model has nowhere to store it. */
+  showAlt?: boolean;
   onChange: (next: { url?: string; alt?: string }) => void;
 }) => {
   const fileInput = useRef<HTMLInputElement>(null);
@@ -20,8 +26,7 @@ export const ImagePicker = ({
 
   const pick = async (file: File) => {
     try {
-      const uploaded = await upload(file);
-      onChange({ url: uploaded, alt });
+      onChange({ url: await upload(file, folder), alt });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Upload failed");
     }
@@ -65,7 +70,7 @@ export const ImagePicker = ({
         >
           <ImagePlus className="h-6 w-6" />
           <span className="text-xs">
-            {uploading ? `Uploading… ${progress ?? 0}%` : "Upload a cover image"}
+            {uploading ? `Uploading… ${progress ?? 0}%` : "Upload an image"}
           </span>
         </button>
       )}
@@ -82,7 +87,7 @@ export const ImagePicker = ({
         }}
       />
 
-      {url && (
+      {url && showAlt && (
         <Field
           label="Alt text"
           hint="Describes the image for screen readers and search engines."

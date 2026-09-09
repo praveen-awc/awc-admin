@@ -4,7 +4,15 @@ import { RequireRole } from "@/auth/RequireRole";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { BlogListPage } from "@/features/blogs/BlogListPage";
 import { BlogEditorPage } from "@/features/blogs/BlogEditorPage";
-import { ComingSoonPage } from "@/pages/ComingSoonPage";
+import { NewsListPage } from "@/features/news/NewsListPage";
+import { NewsEditorPage } from "@/features/news/NewsEditorPage";
+import { CaseStudyListPage } from "@/features/casestudies/CaseStudyListPage";
+import { CaseStudyEditorPage } from "@/features/casestudies/CaseStudyEditorPage";
+import { JobListPage } from "@/features/jobs/JobListPage";
+import { JobEditorPage } from "@/features/jobs/JobEditorPage";
+import { ApplicationListPage } from "@/features/applications/ApplicationListPage";
+import { LeadListPage } from "@/features/leads/LeadListPage";
+import { UserListPage } from "@/features/users/UserListPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
@@ -18,33 +26,37 @@ export const router = createBrowserRouter([
         path: "/",
         element: <AdminLayout />,
         children: [
-          { index: true, element: <Navigate to="/blogs" replace /> },
+          { index: true, element: <Navigate to="/dashboard" replace /> },
           { path: "dashboard", element: <DashboardPage /> },
 
+          // Content
           { path: "blogs", element: <BlogListPage /> },
           { path: "blogs/new", element: <BlogEditorPage /> },
           { path: "blogs/:id/edit", element: <BlogEditorPage /> },
 
-          // Phase 2
-          { path: "jobs", element: <ComingSoonPage title="Jobs" phase={2} /> },
-          {
-            path: "applications",
-            element: <ComingSoonPage title="Applications" phase={2} />,
-          },
+          { path: "news", element: <NewsListPage /> },
+          { path: "news/new", element: <NewsEditorPage /> },
+          { path: "news/:id/edit", element: <NewsEditorPage /> },
 
-          // Phase 3
-          { path: "news", element: <ComingSoonPage title="News & Events" phase={3} /> },
-          {
-            path: "case-studies",
-            element: <ComingSoonPage title="Case Studies" phase={3} />,
-          },
-          { path: "leads", element: <ComingSoonPage title="Contact Leads" phase={3} /> },
+          { path: "case-studies", element: <CaseStudyListPage /> },
+          { path: "case-studies/new", element: <CaseStudyEditorPage /> },
+          { path: "case-studies/:id/edit", element: <CaseStudyEditorPage /> },
 
+          // Recruitment
+          { path: "jobs", element: <JobListPage /> },
+          { path: "jobs/new", element: <JobEditorPage /> },
+          { path: "jobs/:id/edit", element: <JobEditorPage /> },
+          { path: "applications", element: <ApplicationListPage /> },
+
+          // Inbox
+          { path: "leads", element: <LeadListPage /> },
+
+          // Account management. RequireRole is UX only -- the API enforces it.
           {
             path: "settings/users",
             element: (
               <RequireRole roles={["admin"]}>
-                <ComingSoonPage title="Users" phase={2} />
+                <UserListPage />
               </RequireRole>
             ),
           },

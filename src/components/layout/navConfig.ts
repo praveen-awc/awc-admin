@@ -15,8 +15,8 @@ export interface NavItem {
   to: string;
   icon: LucideIcon;
   label: string;
-  /** Items from a later phase render disabled with a "Soon" pill. */
-  phase?: 2 | 3;
+  /** Key into the /admin/stats response, shown as an unread count. */
+  badge?: "applications" | "leads";
   role?: AdminRole;
 }
 
@@ -25,10 +25,6 @@ export interface NavSection {
   items: NavItem[];
 }
 
-/**
- * The full information architecture is visible from day one so Phase 2 and 3
- * slot in without re-laying-out the sidebar.
- */
 export const NAV: NavSection[] = [
   {
     label: "Overview",
@@ -38,20 +34,27 @@ export const NAV: NavSection[] = [
     label: "Content",
     items: [
       { to: "/blogs", icon: FileText, label: "Blog" },
-      { to: "/news", icon: Newspaper, label: "News & Events", phase: 3 },
-      { to: "/case-studies", icon: Briefcase, label: "Case Studies", phase: 3 },
+      { to: "/news", icon: Newspaper, label: "News & Events" },
+      { to: "/case-studies", icon: Briefcase, label: "Case Studies" },
     ],
   },
   {
     label: "Recruitment",
     items: [
-      { to: "/jobs", icon: BriefcaseBusiness, label: "Jobs", phase: 2 },
-      { to: "/applications", icon: Users, label: "Applications", phase: 2 },
+      { to: "/jobs", icon: BriefcaseBusiness, label: "Jobs" },
+      {
+        to: "/applications",
+        icon: Users,
+        label: "Applications",
+        badge: "applications",
+      },
     ],
   },
   {
     label: "Inbox",
-    items: [{ to: "/leads", icon: Mail, label: "Contact Leads", phase: 3 }],
+    items: [
+      { to: "/leads", icon: Mail, label: "Contact Leads", badge: "leads" },
+    ],
   },
   {
     label: "Admin",

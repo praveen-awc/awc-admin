@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
-import { presignUpload } from "@/features/blogs/blog.api";
+import { presignUpload, type UploadFolder } from "@/features/blogs/blog.api";
 import { errorMessage, uploadToS3 } from "@/lib/api";
 
-/** Must stay in sync with the `blog` policy in the backend's presign service. */
+/** Must stay in sync with the image policies in the backend's presign service. */
 const ALLOWED_TYPES = [
   "image/jpeg",
   "image/png",
@@ -22,7 +22,10 @@ export const useImageUpload = () => {
    * does. Note the size check is client-side only: a presigned PutObject URL
    * cannot enforce a maximum size (see the backend service for why).
    */
-  const upload = useCallback(async (file: File): Promise<string> => {
+  const upload = useCallback(async (
+    file: File,
+    folder: UploadFolder = "blog"
+  ): Promise<string> => {
     if (!ALLOWED_TYPES.includes(file.type)) {
       throw new Error("Use a JPG, PNG, WebP, AVIF or GIF image");
     }
@@ -33,7 +36,7 @@ export const useImageUpload = () => {
     setProgress(0);
     try {
       const { uploadUrl, publicUrl } = await presignUpload(
-        "blog",
+        folder,
         file.name,
         file.type
       );

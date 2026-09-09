@@ -1,10 +1,23 @@
 import { NavLink } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/auth/useAuth";
+import { getStats } from "@/features/stats/stats.api";
 import { NAV } from "./navConfig";
 
 export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
   const { user } = useAuth();
+
+  // Unread counts. A failure here must not break navigation, so the badge
+  // simply does not render.
+  const stats = useQuery({
+    queryKey: ["stats"],
+    queryFn: getStats,
+    staleTime: 60_000,
+  });
+
+  const badgeCount = (key: "applications" | "leads"): number =>
+    stats.data?.[key]?.new ?? 0;
 
   return (
     <nav className="flex h-full flex-col gap-6 overflow-y-auto p-4">
@@ -28,23 +41,7 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
             <ul className="mt-1.5 space-y-0.5">
               {items.map((item) => {
                 const Icon = item.icon;
-
-                if (item.phase) {
-                  return (
-                    <li key={item.to}>
-                      <span
-                        className="flex cursor-not-allowed items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-slate-400"
-                        title={`Coming in phase ${item.phase}`}
-                      >
-                        <Icon className="h-4 w-4 shrink-0" />
-                        <span className="flex-1">{item.label}</span>
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
-                          Soon
-                        </span>
-                      </span>
-                    </li>
-                  );
-                }
+                const count = item.badge ? badgeCount(item.badge) : 0;
 
                 return (
                   <li key={item.to}>
@@ -61,7 +58,12 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
                       }
                     >
                       <Icon className="h-4 w-4 shrink-0" />
-                      {item.label}
+                      <span className="flex-1">{item.label}</span>
+                      {count > 0 && (
+                        <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                          {count > 99 ? "99+" : count}
+                        </span>
+                      )}
                     </NavLink>
                   </li>
                 );
