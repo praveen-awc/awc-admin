@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Briefcase, ExternalLink, Pencil, Trash2 } from "lucide-react";
+import { ExternalLink, Pencil, Trash2 } from "lucide-react";
+import { MODULES } from "@/config/modules";
 import {
   deleteCaseStudy,
   listCaseStudies,
@@ -11,10 +12,12 @@ import { useAuth } from "@/auth/useAuth";
 import { errorMessage } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { PUBLIC_SITE_URL } from "@/lib/constants";
+import { useListControls } from "@/hooks/useListParams";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { DataTable, type Column } from "@/components/ui/DataTable";
+import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader, SearchBox } from "@/components/ui/ListToolbar";
 import { Pagination } from "@/components/ui/Pagination";
@@ -27,13 +30,31 @@ export const CaseStudyListPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [page, setPage] = useState(1);
-  const [q, setQ] = useState("");
+  const {
+    params: filters,
+    page,
+    setPage,
+    setSearch,
+    limit,
+    setLimit,
+    sort,
+    range,
+    setRange,
+  } = useListControls(["q"] as const);
+  const { q } = filters;
+
   const [pendingDelete, setPendingDelete] = useState<CaseStudyListItem | null>(
     null
   );
 
-  const params = { page, limit: 20, q };
+  const params = {
+    page,
+    limit,
+    q,
+    sort: sort.field,
+    order: sort.order,
+    ...range,
+  };
   const query = useQuery({
     queryKey: ["casestudies", params],
     queryFn: () => listCaseStudies(params),
@@ -69,10 +90,16 @@ export const CaseStudyListPage = () => {
         </>
       ),
     },
-    { key: "client", header: "Client", cell: (item) => item.clientName },
+    {
+      key: "client",
+      header: "Client",
+      sortField: "clientName",
+      cell: (item) => item.clientName,
+    },
     {
       key: "casetype",
       header: "Technology",
+      sortField: "casetype",
       cell: (item) =>
         item.casetype ? (
           <Badge tone="blue">{item.casetype}</Badge>
@@ -83,9 +110,16 @@ export const CaseStudyListPage = () => {
     {
       key: "industry",
       header: "Industry",
+      sortField: "industry",
       cell: (item) => item.industry || <span className="text-slate-400">—</span>,
     },
-    { key: "updated", header: "Updated", cell: (item) => formatDate(item.updatedAt) },
+    {
+      key: "updated",
+      header: "Updated",
+      sortField: "updatedAt",
+      defaultOrder: "desc",
+      cell: (item) => formatDate(item.updatedAt),
+    },
     {
       key: "actions",
       header: "",
@@ -136,14 +170,19 @@ export const CaseStudyListPage = () => {
         }
       />
 
-      <SearchBox
-        value={q}
-        placeholder="Search client, slug or title"
-        onChange={(value) => {
-          setQ(value);
-          setPage(1);
-        }}
-      />
+      <div className="flex flex-wrap gap-2">
+        <SearchBox
+          value={q}
+          placeholder="Search client, slug or title"
+          onChange={setSearch}
+        />
+        <DateRangeFilter
+          label="Updated"
+          from={range.from}
+          to={range.to}
+          onChange={setRange}
+        />
+      </div>
 
       {query.isPending ? (
         <div className="flex justify-center py-16">
@@ -155,8 +194,12 @@ export const CaseStudyListPage = () => {
         </p>
       ) : items.length === 0 ? (
         <EmptyState
-          icon={Briefcase}
-          title={q ? "No matching case studies" : "No case studies yet"}
+          icon={MODULES.caseStudies.icon}
+          title={
+            q || range.from || range.to
+              ? "No matching case studies"
+              : "No case studies yet"
+          }
           action={
             <Link to="/case-studies/new">
               <Button size="sm">New case study</Button>
@@ -168,12 +211,17 @@ export const CaseStudyListPage = () => {
           columns={columns}
           rows={items}
           rowKey={(item) => item._id}
+          sort={sort}
           footer={
             meta && (
               <Pagination
                 page={meta.page}
                 totalPages={meta.totalPages}
                 total={meta.total}
+                noun="case study"
+                nounPlural="case studies"
+                limit={limit}
+                onLimitChange={setLimit}
                 onChange={setPage}
               />
             )

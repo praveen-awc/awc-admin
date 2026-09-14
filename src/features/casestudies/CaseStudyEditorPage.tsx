@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+// History is aliased: the DOM interface of that name shadows lucide's icon.
+import { ArrowLeft, History as HistoryIcon } from "lucide-react";
 import {
   createCaseStudy,
   getCaseStudy,
@@ -9,16 +10,22 @@ import {
   type CaseStudyHero,
 } from "./caseStudy.api";
 import { errorMessage } from "@/lib/api";
+import { useUnsavedChanges } from "@/hooks/useUnsavedChanges";
+import { useSeedFromRecord } from "@/hooks/useSeedFromRecord";
+import { useFormDraft } from "@/hooks/useFormDraft";
+import { useSaveShortcut } from "@/hooks/useSaveShortcut";
+import { useVersionGuard } from "@/features/revisions/useVersionGuard";
+import { VersionControls } from "@/features/revisions/VersionControls";
 import { PUBLIC_SITE_URL } from "@/lib/constants";
 import { slugify } from "@/lib/slug";
-import {
-  BlockEditor,
-  CASE_STUDY_BLOCK_TYPES,
-  type Block,
-} from "@/components/forms/BlockEditor";
+import { BlockEditor, type Block } from "@/components/forms/BlockEditor";
+import { CASE_STUDY_BLOCK_TYPES } from "@/components/forms/blockTypes";
 import { ImagePicker } from "@/components/forms/ImagePicker";
 import { TagInput } from "@/components/forms/TagInput";
+import { AuditLine } from "@/components/ui/AuditLine";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { DraftBanner } from "@/components/ui/DraftBanner";
 import { Field, Input, Textarea } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
@@ -60,6 +67,8 @@ export const CaseStudyEditorPage = () => {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [slugTouched, setSlugTouched] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const version = useVersionGuard();
 
   const existing = useQuery({
     queryKey: ["casestudy", id],
@@ -67,9 +76,9 @@ export const CaseStudyEditorPage = () => {
     enabled: isEditing,
   });
 
-  useEffect(() => {
-    const item = existing.data;
-    if (!item) return;
+  // Seeded during render, not in an effect -- see useSeedFromRecord.
+  if (useSeedFromRecord(existing.data)) {
+    const item = existing.data!;
     setForm({
       slug: item.slug,
       clientName: item.clientName,
@@ -88,8 +97,11 @@ export const CaseStudyEditorPage = () => {
       keywords: item.meta?.keywords ?? [],
     });
     setSlugTouched(true);
+    // The version this form is based on; sent back on save.
+    version.seen(item.updatedAt);
+    // Seeding is not an edit -- keeps the unsaved-changes guard quiet.
     setDirty(false);
-  }, [existing.data]);
+  }
 
   const patch = (changes: Partial<FormState>) => {
     setForm((current) => ({ ...current, ...changes }));
@@ -99,20 +111,26 @@ export const CaseStudyEditorPage = () => {
   const patchHero = (changes: Partial<CaseStudyHero>) =>
     patch({ hero: { ...form.hero, ...changes } });
 
-  useEffect(() => {
-    if (!dirty) return;
-    const handler = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [dirty]);
+  // Covers both exits: closing the tab and navigating inside the app. The old
+  // beforeunload-only version silently lost work on a sidebar click.
+  const blocker = useUnsavedChanges(dirty);
+
+  // Snapshot the form locally while it's dirty, so a crash or a discarded
+  // navigation doesn't take the work with it.
+  const { draft, clearDraft } = useFormDraft("casestudy", id, form, {
+    enabled: dirty,
+    savedAt: existing.data?.updatedAt,
+  });
 
   const effectiveSlug = slugTouched
     ? form.slug
     : slugify(form.hero.title || form.clientName);
 
   const save = useMutation({
-    mutationFn: () => {
+    // See BlogEditorPage for why `force` is a parameter and not guard state.
+    mutationFn: (options?: { force?: boolean }) => {
       const payload = {
+        expectedUpdatedAt: options?.force ? null : version.expected,
         slug: effectiveSlug || undefined,
         clientName: form.clientName.trim(),
         industry: form.industry,
@@ -130,6 +148,8 @@ export const CaseStudyEditorPage = () => {
     onSuccess: (item) => {
       toast.success(isEditing ? "Case study updated" : "Case study created");
       setDirty(false);
+      clearDraft();
+      version.seen(item.updatedAt);
       // Blocks are normalised server-side; re-seed from the response.
       setForm((current) => ({
         ...current,
@@ -140,8 +160,17 @@ export const CaseStudyEditorPage = () => {
       void queryClient.invalidateQueries({ queryKey: ["stats"] });
       if (!isEditing) navigate(`/case-studies/${item._id}/edit`, { replace: true });
     },
-    onError: (error) => toast.error(errorMessage(error, "Could not save")),
+    onError: (error) => {
+      if (version.caught(error)) return;
+      toast.error(errorMessage(error, "Could not save"));
+    },
   });
+
+  // Same condition as the save button.
+  useSaveShortcut(
+    () => save.mutate(),
+    Boolean(form.clientName.trim() && form.hero.title.trim())
+  );
 
   if (isEditing && existing.isPending) {
     return (
@@ -161,6 +190,18 @@ export const CaseStudyEditorPage = () => {
 
   return (
     <div className="space-y-4">
+      {draft && (
+        <DraftBanner
+          savedAt={draft.savedAt}
+          onRestore={() => {
+            setForm(draft.data);
+            setDirty(true);
+            clearDraft();
+          }}
+          onDiscard={clearDraft}
+        />
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Link
@@ -176,14 +217,35 @@ export const CaseStudyEditorPage = () => {
           {dirty && <span className="text-xs text-amber-600">Unsaved changes</span>}
         </div>
 
-        <Button
-          size="sm"
-          disabled={!form.clientName.trim() || !form.hero.title.trim()}
-          loading={save.isPending}
-          onClick={() => save.mutate()}
-        >
-          {isEditing ? "Save changes" : "Create case study"}
-        </Button>
+        {/* Who last touched this. Blank for records saved before it was tracked. */}
+        <AuditLine
+          createdBy={existing.data?.createdBy}
+          updatedBy={existing.data?.updatedBy}
+          createdAt={existing.data?.createdAt}
+          updatedAt={existing.data?.updatedAt}
+          className="w-full text-xs text-slate-400"
+        />
+
+        <div className="flex items-center gap-2">
+          {isEditing && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setHistoryOpen(true)}
+            >
+              <HistoryIcon className="h-4 w-4" />
+              History
+            </Button>
+          )}
+          <Button
+            size="sm"
+            disabled={!form.clientName.trim() || !form.hero.title.trim()}
+            loading={save.isPending}
+            onClick={() => save.mutate()}
+          >
+            {isEditing ? "Save changes" : "Create case study"}
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -328,6 +390,31 @@ export const CaseStudyEditorPage = () => {
           </section>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={blocker.state === "blocked"}
+        title="Leave without saving?"
+        description="Your changes on this page will be lost."
+        confirmLabel="Discard changes"
+        onCancel={() => blocker.reset?.()}
+        onConfirm={() => blocker.proceed?.()}
+      />
+
+      <VersionControls
+        type="casestudy"
+        id={id}
+        version={version}
+        saving={save.isPending}
+        onForce={() => save.mutate({ force: true })}
+        historyOpen={historyOpen}
+        onCloseHistory={() => setHistoryOpen(false)}
+        onRestored={() => {
+          void queryClient.invalidateQueries({ queryKey: ["casestudy", id] });
+          void queryClient.invalidateQueries({ queryKey: ["casestudies"] });
+          setDirty(false);
+          clearDraft();
+        }}
+      />
     </div>
   );
 };

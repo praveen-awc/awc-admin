@@ -1,4 +1,4 @@
-import { api, type ApiEnvelope } from "@/lib/api";
+import { api, stripEmpty, type ApiEnvelope, type ListQuery } from "@/lib/api";
 import type { AdminRole } from "@/auth/auth.api";
 
 export interface AdminUserRow {
@@ -12,17 +12,7 @@ export interface AdminUserRow {
   updatedAt: string;
 }
 
-const stripEmpty = (params: Record<string, unknown>) =>
-  Object.fromEntries(
-    Object.entries(params).filter(([, value]) => value !== "" && value != null)
-  );
-
-export const listUsers = async (params: {
-  page?: number;
-  limit?: number;
-  q?: string;
-  role?: string;
-}) => {
+export const listUsers = async (params: ListQuery & { role?: string }) => {
   const { data } = await api.get<ApiEnvelope<AdminUserRow[]>>("/admin/users", {
     params: stripEmpty(params),
   });

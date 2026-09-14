@@ -1,3 +1,5 @@
+import type { AuditActor } from "@/components/ui/AuditLine";
+import type { ListQuery } from "@/lib/api";
 /**
  * Mirrors awc-backend/src/models/Blog.ts.
  * Keep the two in sync -- a silent field drift here shows up as data that
@@ -43,6 +45,12 @@ export interface BlogListItem {
   readingTime: number;
   featured: boolean;
   createdAt: string;
+  /**
+   * Populated by the admin detail endpoints. Absent on records written
+   * before the field existed -- AuditLine renders those without a name.
+   */
+  createdBy?: AuditActor | string | null;
+  updatedBy?: AuditActor | string | null;
   updatedAt: string;
 }
 
@@ -56,6 +64,8 @@ export interface Blog extends BlogListItem {
 /** Payload accepted by POST/PUT /api/admin/blogs. */
 export interface BlogInput {
   title: string;
+  /** Whoever wrote the post -- free text, not an admin user. */
+  author?: { name?: string };
   slug?: string;
   excerpt?: string;
   contentHtml: string;
@@ -66,12 +76,15 @@ export interface BlogInput {
   publishedAt?: string | null;
   featured?: boolean;
   seo?: BlogSeo;
+  /**
+   * The updatedAt this edit was based on. The server rejects the write with
+   * 409 STALE_WRITE if the stored record has moved on since. Null or omitted
+   * skips the check, which is what a deliberate overwrite sends.
+   */
+  expectedUpdatedAt?: string | null;
 }
 
-export interface BlogListParams {
-  page?: number;
-  limit?: number;
+export type BlogListParams = ListQuery & {
   status?: BlogStatus | "";
   category?: string;
-  q?: string;
-}
+};

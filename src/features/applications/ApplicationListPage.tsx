@@ -1,23 +1,32 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, ExternalLink, FileText, Trash2, Users, X } from "lucide-react";
+import { Download, ExternalLink, Eye, FileText, Trash2, X } from "lucide-react";
+import { MODULES } from "@/config/modules";
 import {
   APPLICATION_STATUSES,
   deleteApplication,
   downloadApplicationsCsv,
+  getResumeDownloadUrl,
+  getResumeLink,
   listApplications,
   updateApplication,
   type Application,
   type ApplicationStatus,
 } from "./application.api";
+import { ResumePreview } from "./ResumePreview";
 import { useAuth } from "@/auth/useAuth";
 import { errorMessage } from "@/lib/api";
 import { formatDateTime, titleCase } from "@/lib/format";
+import { useListControls } from "@/hooks/useListParams";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
+import { BulkActionBar } from "@/components/ui/BulkActionBar";
+import { runBulk } from "@/lib/runBulk";
+import { AuditLine } from "@/components/ui/AuditLine";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { DataTable, type Column } from "@/components/ui/DataTable";
+import { DateRangeFilter } from "@/components/ui/DateRangeFilter";
+import { DetailRow } from "@/components/ui/DetailRow";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, Select, Textarea } from "@/components/ui/Input";
 import { PageHeader, SearchBox } from "@/components/ui/ListToolbar";
@@ -39,17 +48,79 @@ export const ApplicationListPage = () => {
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  // jobId arrives as a link from the Jobs list ("12 applicants").
-  const [searchParams, setSearchParams] = useSearchParams();
-  const jobId = searchParams.get("jobId") ?? "";
+  // All three filters live in the URL. jobId also arrives that way, as a link
+  // from the Jobs list ("12 applicants").
+  const {
+    params: filters,
+    page,
+    set,
+    setPage,
+    setSearch,
+    limit,
+    setLimit,
+    sort,
+    range,
+    setRange,
+  } = useListControls(["q", "status", "jobId"] as const);
+  const { q, status, jobId } = filters;
 
-  const [page, setPage] = useState(1);
-  const [q, setQ] = useState("");
-  const [status, setStatus] = useState("");
   const [selected, setSelected] = useState<Application | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Application | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ name: string; url: string } | null>(
+    null
+  );
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const params = { page, limit: 20, q, status, jobId };
+  /**
+   * The stored resumeUrl points at a private bucket, so it 403s. Fetch a signed
+   * URL first, then navigate to it.
+   *
+   * window.location rather than window.open: after the await the user-gesture
+   * context is gone and popup blockers step in. The signed URL carries
+   * Content-Disposition: attachment, so assigning location starts the download
+   * and leaves the page where it is.
+   */
+  const openResume = async (id: string) => {
+    setDownloadingId(id);
+    try {
+      window.location.href = await getResumeDownloadUrl(id);
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not open this resume"));
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  /**
+   * Read the CV first, download only if it is worth keeping.
+   *
+   * Word files have no preview -- the API rejects the request with a clear
+   * message rather than opening a frame the browser cannot fill.
+   */
+  const previewResume = async (application: Application) => {
+    setPreviewingId(application._id);
+    try {
+      const link = await getResumeLink(application._id, "preview");
+      setPreview({ name: application.fullName, url: link.url });
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not preview this resume"));
+    } finally {
+      setPreviewingId(null);
+    }
+  };
+
+  const params = {
+    page,
+    limit,
+    q,
+    status,
+    jobId,
+    sort: sort.field,
+    order: sort.order,
+    ...range,
+  };
   const query = useQuery({
     queryKey: ["applications", params],
     queryFn: () => listApplications(params),
@@ -88,17 +159,44 @@ export const ApplicationListPage = () => {
   });
 
   const exporting = useMutation({
-    mutationFn: () => downloadApplicationsCsv({ status, jobId }),
+    // Same filters as the list, so the CSV matches what is on screen.
+    mutationFn: () => downloadApplicationsCsv({ status, jobId, ...range }),
     onError: (error) => toast.error(errorMessage(error, "Export failed")),
   });
 
+  // One call per selected row against the existing endpoints, so their role
+  // guards apply unchanged and partial failures stay visible.
+  const bulk = useMutation({
+    mutationFn: (action: { verb: string; run: (id: string) => Promise<unknown> }) =>
+      runBulk(selection, action.run).then((result) => ({ ...result, verb: action.verb })),
+    onSuccess: ({ ok, failed, verb }) => {
+      if (failed === 0)
+        toast.success(`${ok} application${ok === 1 ? "" : "s"} ${verb}`);
+      else if (ok === 0)
+        toast.error(`Could not ${verb} any of the ${failed} selected`);
+      else toast.error(`${ok} of ${ok + failed} ${verb} — the rest failed`);
+
+      setSelectedIds([]);
+      invalidate();
+    },
+    onError: (error) => toast.error(errorMessage(error, "Bulk action failed")),
+  });
+
   const applications = query.data?.applications ?? [];
+
+  // Derived, not stored: intersecting with what's on screen guarantees a
+  // bulk action can never reach a row the user can no longer see, without
+  // depending on an effect having fired after a page or filter change.
+  const selection = selectedIds.filter((id) =>
+    applications.some((row) => row._id === id)
+  );
   const meta = query.data?.meta;
 
   const columns: Column<Application>[] = [
     {
       key: "name",
       header: "Candidate",
+      sortField: "fullName",
       cell: (application) => (
         <>
           <button
@@ -131,16 +229,25 @@ export const ApplicationListPage = () => {
     {
       key: "status",
       header: "Status",
-      cell: (application) => (
-        <Badge tone={STATUS_TONE[application.status] ?? "slate"}>
-          {titleCase(application.status)}
-        </Badge>
-      ),
+      sortField: "status",
+      // Applications submitted through an older deployment arrive with no
+      // status at all, so the schema default is applied here for display.
+      // "new" is what the record means, not a guess.
+      cell: (application) => {
+        const status = application.status ?? "new";
+        return (
+          <Badge tone={STATUS_TONE[status] ?? "slate"}>
+            {titleCase(status)}
+          </Badge>
+        );
+      },
     },
     { key: "location", header: "Location", cell: (a) => a.location },
     {
       key: "applied",
       header: "Applied",
+      sortField: "createdAt",
+      defaultOrder: "desc",
       cell: (application) => formatDateTime(application.createdAt),
     },
     {
@@ -149,11 +256,30 @@ export const ApplicationListPage = () => {
       align: "right",
       cell: (application) => (
         <div className="flex justify-end gap-1">
-          <a href={application.resumeUrl} target="_blank" rel="noopener noreferrer">
-            <Button size="sm" variant="ghost" aria-label="Open resume">
+          {/* Preview first, download second: reading a CV should not mean
+              collecting a file you may not want. */}
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label="Preview resume"
+            loading={previewingId === application._id}
+            onClick={() => void previewResume(application)}
+          >
+            {previewingId === application._id ? null : (
+              <Eye className="h-4 w-4" />
+            )}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label="Download resume"
+            loading={downloadingId === application._id}
+            onClick={() => void openResume(application._id)}
+          >
+            {downloadingId === application._id ? null : (
               <FileText className="h-4 w-4" />
-            </Button>
-          </a>
+            )}
+          </Button>
           {user?.role === "admin" && (
             <Button
               size="sm"
@@ -192,10 +318,7 @@ export const ApplicationListPage = () => {
           Filtered to one job
           <button
             type="button"
-            onClick={() => {
-              setSearchParams({});
-              setPage(1);
-            }}
+            onClick={() => set({ jobId: "" })}
             className="ml-auto inline-flex items-center gap-1 text-xs hover:underline"
           >
             <X className="h-3.5 w-3.5" />
@@ -208,18 +331,12 @@ export const ApplicationListPage = () => {
         <SearchBox
           value={q}
           placeholder="Search name, email or location"
-          onChange={(value) => {
-            setQ(value);
-            setPage(1);
-          }}
+          onChange={setSearch}
         />
         <Select
           className="w-44"
           value={status}
-          onChange={(event) => {
-            setStatus(event.target.value);
-            setPage(1);
-          }}
+          onChange={(event) => set({ status: event.target.value })}
         >
           <option value="">All statuses</option>
           {APPLICATION_STATUSES.map((value) => (
@@ -228,7 +345,48 @@ export const ApplicationListPage = () => {
             </option>
           ))}
         </Select>
+        <DateRangeFilter
+          label="Applied"
+          from={range.from}
+          to={range.to}
+          onChange={setRange}
+        />
       </div>
+
+      <BulkActionBar
+        count={selection.length}
+        busy={bulk.isPending}
+        onClear={() => setSelectedIds([])}
+        actions={[
+          {
+            label: "Shortlist",
+            onRun: () =>
+              bulk.mutate({
+                verb: "shortlisted",
+                run: (id) => updateApplication(id, { status: "shortlisted" }),
+              }),
+          },
+          {
+            label: "Reject",
+            onRun: () =>
+              bulk.mutate({
+                verb: "rejected",
+                run: (id) => updateApplication(id, { status: "rejected" }),
+              }),
+          },
+          {
+            label: "Delete",
+            variant: "danger",
+            // Admin-only server-side; don't offer an action that can only fail.
+            hidden: user?.role !== "admin",
+            onRun: () =>
+              bulk.mutate({
+                verb: "deleted",
+                run: (id) => deleteApplication(id),
+              }),
+          },
+        ]}
+      />
 
       {query.isPending ? (
         <div className="flex justify-center py-16">
@@ -240,20 +398,29 @@ export const ApplicationListPage = () => {
         </p>
       ) : applications.length === 0 ? (
         <EmptyState
-          icon={Users}
-          title={q || status || jobId ? "No matching applications" : "No applications yet"}
+          icon={MODULES.applications.icon}
+          title={
+            q || status || jobId || range.from || range.to
+              ? "No matching applications"
+              : "No applications yet"
+          }
         />
       ) : (
         <DataTable
           columns={columns}
           rows={applications}
           rowKey={(application) => application._id}
+          selection={{ selectedIds: selection, onSelectionChange: setSelectedIds }}
+          sort={sort}
           footer={
             meta && (
               <Pagination
                 page={meta.page}
                 totalPages={meta.totalPages}
                 total={meta.total}
+                noun="application"
+                limit={limit}
+                onLimitChange={setLimit}
                 onChange={setPage}
               />
             )
@@ -265,8 +432,22 @@ export const ApplicationListPage = () => {
         <ApplicationDrawer
           application={selected}
           saving={mutate.isPending}
+          downloading={downloadingId === selected._id}
+          previewing={previewingId === selected._id}
+          onDownloadResume={() => void openResume(selected._id)}
+          onPreviewResume={() => void previewResume(selected)}
           onClose={() => setSelected(null)}
           onSave={(changes) => mutate.mutate({ id: selected._id, changes })}
+        />
+      )}
+
+      {preview && (
+        <ResumePreview
+          name={preview.name}
+          url={preview.url}
+          downloading={downloadingId !== null}
+          onDownload={() => selected && void openResume(selected._id)}
+          onClose={() => setPreview(null)}
         />
       )}
 
@@ -286,23 +467,28 @@ export const ApplicationListPage = () => {
 const ApplicationDrawer = ({
   application,
   saving,
+  downloading,
+  previewing,
+  onDownloadResume,
+  onPreviewResume,
   onClose,
   onSave,
 }: {
   application: Application;
   saving: boolean;
+  downloading: boolean;
+  previewing: boolean;
+  onDownloadResume: () => void;
+  onPreviewResume: () => void;
   onClose: () => void;
   onSave: (changes: { status: ApplicationStatus; notes: string }) => void;
 }) => {
-  const [status, setStatus] = useState<ApplicationStatus>(application.status);
-  const [notes, setNotes] = useState(application.notes ?? "");
-
-  const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div>
-      <dt className="text-xs uppercase tracking-wide text-slate-400">{label}</dt>
-      <dd className="mt-0.5 text-sm text-slate-800">{children}</dd>
-    </div>
+  // Same fallback as the list column: a record with no status is an unreviewed
+  // one, and the select needs a real value or it renders unset.
+  const [status, setStatus] = useState<ApplicationStatus>(
+    application.status ?? "new"
   );
+  const [notes, setNotes] = useState(application.notes ?? "");
 
   return (
     <div
@@ -329,27 +515,41 @@ const ApplicationDrawer = ({
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
           <dl className="grid grid-cols-2 gap-3">
-            <Row label="Email">
+            <DetailRow label="Email">
               <a href={`mailto:${application.email}`} className="text-brand-700 hover:underline">
                 {application.email}
               </a>
-            </Row>
-            <Row label="Phone">{application.contactNumber}</Row>
-            <Row label="Location">{application.location}</Row>
-            <Row label="Applied">{formatDateTime(application.createdAt)}</Row>
-            <Row label="Applied for">
+            </DetailRow>
+            <DetailRow label="Phone">{application.contactNumber}</DetailRow>
+            <DetailRow label="Location">{application.location}</DetailRow>
+            <DetailRow label="Applied">{formatDateTime(application.createdAt)}</DetailRow>
+            <DetailRow label="Applied for">
               {application.jobId?.title ?? "Job removed"}
-            </Row>
-            <Row label="Source">{application.source}</Row>
+            </DetailRow>
+            <DetailRow label="Source">{application.source}</DetailRow>
           </dl>
 
+          {/* Who last moved this along. Blank before it was tracked. */}
+          <AuditLine
+            updatedBy={application.updatedBy}
+            createdAt={application.createdAt}
+            updatedAt={application.updatedAt}
+          />
+
           <div className="flex flex-wrap gap-2">
-            <a href={application.resumeUrl} target="_blank" rel="noopener noreferrer">
-              <Button size="sm" variant="secondary">
-                <FileText className="h-4 w-4" />
-                Resume
-              </Button>
-            </a>
+            <Button size="sm" loading={previewing} onClick={onPreviewResume}>
+              {!previewing && <Eye className="h-4 w-4" />}
+              Preview resume
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={downloading}
+              onClick={onDownloadResume}
+            >
+              {!downloading && <FileText className="h-4 w-4" />}
+              Download
+            </Button>
             {application.linkedinUrl && (
               <a href={application.linkedinUrl} target="_blank" rel="noopener noreferrer">
                 <Button size="sm" variant="secondary">

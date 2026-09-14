@@ -70,6 +70,37 @@ api.interceptors.response.use(
   }
 );
 
+/**
+ * Query params every admin list endpoint understands, on top of its own
+ * filters. `sort` is ignored by the server unless that field is on the
+ * endpoint's allowlist; `from`/`to` are inclusive `YYYY-MM-DD` days.
+ *
+ * A type alias rather than an interface on purpose: only aliases get an
+ * implicit index signature, so only these can be passed to stripEmpty's
+ * Record<string, unknown>.
+ */
+export type ListQuery = {
+  page?: number;
+  limit?: number;
+  q?: string;
+  sort?: string;
+  order?: "asc" | "desc";
+  from?: string;
+  to?: string;
+};
+
+/**
+ * Drops empty params so a request carries only what is actually filtered.
+ *
+ * Was written separately in six feature api modules. Sending `?status=` is
+ * mostly harmless -- the controllers test truthiness -- but it makes two
+ * identical views produce different query keys, and so separate caches.
+ */
+export const stripEmpty = (params: Record<string, unknown>) =>
+  Object.fromEntries(
+    Object.entries(params).filter(([, value]) => value !== "" && value != null)
+  );
+
 /** Shape every new backend endpoint returns. */
 export interface ApiEnvelope<T> {
   success: boolean;

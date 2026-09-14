@@ -1,18 +1,25 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+// History is aliased: the DOM interface of that name shadows lucide's icon.
+import { ArrowLeft, History as HistoryIcon } from "lucide-react";
 import { createNews, getNews, updateNews, type NewsStatus } from "./news.api";
 import { errorMessage } from "@/lib/api";
+import { useUnsavedChanges } from "@/hooks/useUnsavedChanges";
+import { useSeedFromRecord } from "@/hooks/useSeedFromRecord";
+import { useFormDraft } from "@/hooks/useFormDraft";
+import { useSaveShortcut } from "@/hooks/useSaveShortcut";
+import { useVersionGuard } from "@/features/revisions/useVersionGuard";
+import { VersionControls } from "@/features/revisions/VersionControls";
 import { PUBLIC_SITE_URL } from "@/lib/constants";
 import { slugify } from "@/lib/slug";
-import {
-  BlockEditor,
-  NEWS_BLOCK_TYPES,
-  type Block,
-} from "@/components/forms/BlockEditor";
+import { BlockEditor, type Block } from "@/components/forms/BlockEditor";
+import { NEWS_BLOCK_TYPES } from "@/components/forms/blockTypes";
 import { ImagePicker } from "@/components/forms/ImagePicker";
+import { AuditLine } from "@/components/ui/AuditLine";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { DraftBanner } from "@/components/ui/DraftBanner";
 import { Field, Input, Select, Textarea } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
@@ -49,6 +56,8 @@ export const NewsEditorPage = () => {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [slugTouched, setSlugTouched] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const version = useVersionGuard();
 
   const existing = useQuery({
     queryKey: ["newsItem", id],
@@ -56,9 +65,9 @@ export const NewsEditorPage = () => {
     enabled: isEditing,
   });
 
-  useEffect(() => {
-    const item = existing.data;
-    if (!item) return;
+  // Seeded during render, not in an effect -- see useSeedFromRecord.
+  if (useSeedFromRecord(existing.data)) {
+    const item = existing.data!;
     setForm({
       title: item.title,
       slug: item.slug,
@@ -70,25 +79,34 @@ export const NewsEditorPage = () => {
       metaDescription: item.seo?.metaDescription ?? "",
     });
     setSlugTouched(true);
+    // The version this form is based on; sent back on save.
+    version.seen(item.updatedAt);
+    // Seeding is not an edit -- keeps the unsaved-changes guard quiet.
     setDirty(false);
-  }, [existing.data]);
+  }
 
   const patch = (changes: Partial<FormState>) => {
     setForm((current) => ({ ...current, ...changes }));
     setDirty(true);
   };
 
-  useEffect(() => {
-    if (!dirty) return;
-    const handler = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [dirty]);
+  // Covers both exits: closing the tab and navigating inside the app. The old
+  // beforeunload-only version silently lost work on a sidebar click.
+  const blocker = useUnsavedChanges(dirty);
+
+  // Snapshot the form locally while it's dirty, so a crash or a discarded
+  // navigation doesn't take the work with it.
+  const { draft, clearDraft } = useFormDraft("news", id, form, {
+    enabled: dirty,
+    savedAt: existing.data?.updatedAt,
+  });
 
   const effectiveSlug = slugTouched ? form.slug : slugify(form.title);
 
   const save = useMutation({
-    mutationFn: () =>
+    // See BlogEditorPage: `force` is explicit because the retry fires in the
+    // same render as the conflict prompt closing.
+    mutationFn: (options?: { force?: boolean }) =>
       isEditing
         ? updateNews(id!, {
             title: form.title.trim(),
@@ -99,6 +117,7 @@ export const NewsEditorPage = () => {
             items: form.items,
             status: form.status,
             seo: { metaDescription: form.metaDescription },
+            expectedUpdatedAt: options?.force ? null : version.expected,
           })
         : createNews({
             title: form.title.trim(),
@@ -113,6 +132,8 @@ export const NewsEditorPage = () => {
     onSuccess: (item) => {
       toast.success(isEditing ? "News item updated" : "News item created");
       setDirty(false);
+      clearDraft();
+      version.seen(item.updatedAt);
       // Blocks are normalised server-side (markup stripped, empties dropped),
       // so re-seed from the response rather than trusting local state.
       setForm((current) => ({
@@ -124,8 +145,15 @@ export const NewsEditorPage = () => {
       void queryClient.invalidateQueries({ queryKey: ["stats"] });
       if (!isEditing) navigate(`/news/${item._id}/edit`, { replace: true });
     },
-    onError: (error) => toast.error(errorMessage(error, "Could not save")),
+    onError: (error) => {
+      if (version.caught(error)) return;
+      toast.error(errorMessage(error, "Could not save"));
+    },
   });
+
+  // Same condition as the save button, so the shortcut cannot submit what the
+  // button would refuse.
+  useSaveShortcut(() => save.mutate(), Boolean(form.title.trim()));
 
   if (isEditing && existing.isPending) {
     return (
@@ -145,6 +173,18 @@ export const NewsEditorPage = () => {
 
   return (
     <div className="space-y-4">
+      {draft && (
+        <DraftBanner
+          savedAt={draft.savedAt}
+          onRestore={() => {
+            setForm(draft.data);
+            setDirty(true);
+            clearDraft();
+          }}
+          onDiscard={clearDraft}
+        />
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Link to="/news" className="text-slate-400 hover:text-slate-700" aria-label="Back">
@@ -156,14 +196,35 @@ export const NewsEditorPage = () => {
           {dirty && <span className="text-xs text-amber-600">Unsaved changes</span>}
         </div>
 
-        <Button
-          size="sm"
-          disabled={!form.title.trim()}
-          loading={save.isPending}
-          onClick={() => save.mutate()}
-        >
-          {isEditing ? "Save changes" : "Create item"}
-        </Button>
+        {/* Who last touched this. Blank for records saved before it was tracked. */}
+        <AuditLine
+          createdBy={existing.data?.createdBy}
+          updatedBy={existing.data?.updatedBy}
+          createdAt={existing.data?.createdAt}
+          updatedAt={existing.data?.updatedAt}
+          className="w-full text-xs text-slate-400"
+        />
+
+        <div className="flex items-center gap-2">
+          {isEditing && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setHistoryOpen(true)}
+            >
+              <HistoryIcon className="h-4 w-4" />
+              History
+            </Button>
+          )}
+          <Button
+            size="sm"
+            disabled={!form.title.trim()}
+            loading={save.isPending}
+            onClick={() => save.mutate()}
+          >
+            {isEditing ? "Save changes" : "Create item"}
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -246,6 +307,31 @@ export const NewsEditorPage = () => {
           </section>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={blocker.state === "blocked"}
+        title="Leave without saving?"
+        description="Your changes on this page will be lost."
+        confirmLabel="Discard changes"
+        onCancel={() => blocker.reset?.()}
+        onConfirm={() => blocker.proceed?.()}
+      />
+
+      <VersionControls
+        type="news"
+        id={id}
+        version={version}
+        saving={save.isPending}
+        onForce={() => save.mutate({ force: true })}
+        historyOpen={historyOpen}
+        onCloseHistory={() => setHistoryOpen(false)}
+        onRestored={() => {
+          void queryClient.invalidateQueries({ queryKey: ["newsItem", id] });
+          void queryClient.invalidateQueries({ queryKey: ["news"] });
+          setDirty(false);
+          clearDraft();
+        }}
+      />
     </div>
   );
 };

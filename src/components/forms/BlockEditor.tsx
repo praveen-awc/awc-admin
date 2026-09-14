@@ -1,16 +1,8 @@
 import { useRef } from "react";
-import {
-  ChevronDown,
-  ChevronUp,
-  GripVertical,
-  Heading2,
-  Image as ImageIcon,
-  Link2,
-  List,
-  ListOrdered,
-  Text,
-  Trash2,
-} from "lucide-react";
+// Text is the fallback icon below -- without this import it resolves to the
+// DOM's global Text, which is not a component.
+import { ChevronDown, ChevronUp, GripVertical, Text, Trash2 } from "lucide-react";
+import type { BlockTypeDef } from "./blockTypes";
 import { useImageUpload } from "@/components/editor/useImageUpload";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
@@ -35,28 +27,6 @@ export interface Block {
   caption?: string;
 }
 
-export interface BlockTypeDef {
-  type: string;
-  label: string;
-  icon: typeof Text;
-}
-
-/** News uses "list"; case studies distinguish ordered from unordered. */
-export const NEWS_BLOCK_TYPES: BlockTypeDef[] = [
-  { type: "paragraph", label: "Paragraph", icon: Text },
-  { type: "heading", label: "Heading", icon: Heading2 },
-  { type: "list", label: "List", icon: List },
-  { type: "image", label: "Image", icon: ImageIcon },
-  { type: "link", label: "Link", icon: Link2 },
-];
-
-export const CASE_STUDY_BLOCK_TYPES: BlockTypeDef[] = [
-  { type: "paragraph", label: "Paragraph", icon: Text },
-  { type: "heading", label: "Heading", icon: Heading2 },
-  { type: "list_unordered", label: "Bullet list", icon: List },
-  { type: "list_ordered", label: "Numbered list", icon: ListOrdered },
-  { type: "image", label: "Image", icon: ImageIcon },
-];
 
 const isList = (type: string) =>
   type === "list" || type === "list_ordered" || type === "list_unordered";

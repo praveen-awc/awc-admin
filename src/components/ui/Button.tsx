@@ -11,7 +11,10 @@ const VARIANTS: Record<Variant, string> = {
   secondary:
     "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50 focus-visible:outline-slate-400",
   ghost: "text-slate-600 hover:bg-slate-100 focus-visible:outline-slate-400",
-  danger: "bg-red-600 text-white hover:bg-red-700 focus-visible:outline-red-600",
+  // AWC's own red rather than a generic one -- visually near-identical to
+  // red-600, but now a deliberate brand token.
+  danger:
+    "bg-danger text-white hover:bg-danger-dark focus-visible:outline-danger",
 };
 
 const SIZES: Record<Size, string> = {

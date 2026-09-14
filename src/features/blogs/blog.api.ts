@@ -1,4 +1,4 @@
-import { api, type ApiEnvelope } from "@/lib/api";
+import { api, stripEmpty, type ApiEnvelope } from "@/lib/api";
 import type {
   Blog,
   BlogInput,
@@ -17,9 +17,7 @@ export const listBlogs = async (
 ): Promise<PagedBlogs> => {
   const { data } = await api.get<ApiEnvelope<BlogListItem[]>>("/admin/blogs", {
     // Drop empty filters so they don't become "?status=" on the wire.
-    params: Object.fromEntries(
-      Object.entries(params).filter(([, value]) => value !== "" && value != null)
-    ),
+    params: stripEmpty(params),
   });
 
   return {
@@ -82,5 +80,25 @@ export const presignUpload = async (
     "/admin/uploads/presign",
     { folder, fileName, contentType }
   );
+  return data.data;
+};
+
+export interface BlogFacet {
+  name: string;
+  count: number;
+}
+
+/**
+ * Public endpoint, reused here purely to offer author suggestions in the
+ * editor so the same person doesn't end up with several spellings.
+ */
+export const getBlogFilters = async (): Promise<{
+  categories: BlogFacet[];
+  tags: BlogFacet[];
+  authors: BlogFacet[];
+}> => {
+  const { data } = await api.get<
+    ApiEnvelope<{ categories: BlogFacet[]; tags: BlogFacet[]; authors: BlogFacet[] }>
+  >("/blogs/filters");
   return data.data;
 };

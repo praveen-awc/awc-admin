@@ -1,4 +1,5 @@
-import { api, type ApiEnvelope } from "@/lib/api";
+import type { AuditActor } from "@/components/ui/AuditLine";
+import { api, stripEmpty, type ApiEnvelope, type ListQuery } from "@/lib/api";
 
 export const APPLICATION_STATUSES = [
   "new",
@@ -22,24 +23,26 @@ export interface Application {
   linkedinUrl: string;
   source: string;
   resumeUrl: string;
-  status: ApplicationStatus;
+  /**
+   * Optional because it genuinely can be absent. The older deployment still
+   * serving the live careers form predates this field and writes applications
+   * to the same database without it. Treat a missing status as "new".
+   */
+  status?: ApplicationStatus;
   notes?: string;
   createdAt: string;
+  /**
+   * Populated by the admin detail endpoints. Absent on records written
+   * before the field existed -- AuditLine renders those without a name.
+   */
+  createdBy?: AuditActor | string | null;
+  updatedBy?: AuditActor | string | null;
   updatedAt: string;
 }
 
-const stripEmpty = (params: Record<string, unknown>) =>
-  Object.fromEntries(
-    Object.entries(params).filter(([, value]) => value !== "" && value != null)
-  );
-
-export const listApplications = async (params: {
-  page?: number;
-  limit?: number;
-  q?: string;
-  status?: string;
-  jobId?: string;
-}) => {
+export const listApplications = async (
+  params: ListQuery & { status?: string; jobId?: string }
+) => {
   const { data } = await api.get<ApiEnvelope<Application[]>>(
     "/admin/applications",
     { params: stripEmpty(params) }
@@ -65,6 +68,37 @@ export const deleteApplication = async (id: string): Promise<void> => {
   await api.delete(`/admin/applications/${id}`);
 };
 
+export interface ResumeLink {
+  url: string;
+  expiresIn: number;
+  /** False for .doc/.docx, which no browser can render. */
+  previewable: boolean;
+  fileName: string;
+}
+
+/**
+ * Resumes live in a private S3 bucket, so `application.resumeUrl` is not
+ * directly openable -- it returns AccessDenied. Ask the API for a fresh signed
+ * URL each time; it expires shortly after.
+ *
+ * `mode: "preview"` returns an inline URL for reading the CV in place;
+ * otherwise the URL carries Content-Disposition: attachment and downloads.
+ */
+export const getResumeLink = async (
+  id: string,
+  mode: "download" | "preview" = "download"
+): Promise<ResumeLink> => {
+  const { data } = await api.get<ApiEnvelope<ResumeLink>>(
+    `/admin/applications/${id}/resume`,
+    { params: mode === "preview" ? { mode: "preview" } : undefined }
+  );
+  return data.data;
+};
+
+/** Convenience for the download path, which only ever needs the URL. */
+export const getResumeDownloadUrl = async (id: string): Promise<string> =>
+  (await getResumeLink(id, "download")).url;
+
 /**
  * Downloads the CSV through the authenticated axios client, then hands the
  * browser a blob. A plain <a href> would hit the API without cookies attached
@@ -73,6 +107,8 @@ export const deleteApplication = async (id: string): Promise<void> => {
 export const downloadApplicationsCsv = async (params: {
   status?: string;
   jobId?: string;
+  from?: string;
+  to?: string;
 }) => {
   const response = await api.get("/admin/applications/export", {
     params: stripEmpty(params),

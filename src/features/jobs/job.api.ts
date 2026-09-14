@@ -1,22 +1,14 @@
-import { api, type ApiEnvelope } from "@/lib/api";
+import { api, stripEmpty, type ApiEnvelope, type ListQuery } from "@/lib/api";
 import type { Job, JobInput, JobListItem } from "./job.types";
-
-const stripEmpty = (params: Record<string, unknown>) =>
-  Object.fromEntries(
-    Object.entries(params).filter(([, value]) => value !== "" && value != null)
-  );
 
 export interface PagedJobs {
   jobs: JobListItem[];
   meta: { page: number; limit: number; total: number; totalPages: number };
 }
 
-export const listJobs = async (params: {
-  page?: number;
-  limit?: number;
-  q?: string;
-  isActive?: string;
-}): Promise<PagedJobs> => {
+export const listJobs = async (
+  params: ListQuery & { isActive?: string }
+): Promise<PagedJobs> => {
   const { data } = await api.get<ApiEnvelope<JobListItem[]>>("/admin/jobs", {
     params: stripEmpty(params),
   });

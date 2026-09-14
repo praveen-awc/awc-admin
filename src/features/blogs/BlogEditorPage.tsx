@@ -1,16 +1,28 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink } from "lucide-react";
-import { createBlog, getBlog, updateBlog } from "./blog.api";
+// Aliased: lucide's History would otherwise be shadowed by the DOM's History
+// interface, which is a type, not a component.
+import { ArrowLeft, ExternalLink, History as HistoryIcon } from "lucide-react";
+import { createBlog, getBlog, getBlogFilters, updateBlog } from "./blog.api";
 import type { BlogCoverImage, BlogSeo, BlogStatus } from "./blog.types";
 import { errorMessage } from "@/lib/api";
+import { useAuth } from "@/auth/useAuth";
+import { useUnsavedChanges } from "@/hooks/useUnsavedChanges";
+import { useSeedFromRecord } from "@/hooks/useSeedFromRecord";
+import { useFormDraft } from "@/hooks/useFormDraft";
+import { useSaveShortcut } from "@/hooks/useSaveShortcut";
+import { useVersionGuard } from "@/features/revisions/useVersionGuard";
+import { VersionControls } from "@/features/revisions/VersionControls";
 import { PUBLIC_SITE_URL } from "@/lib/constants";
 import { slugify } from "@/lib/slug";
 import { RichTextEditor } from "@/components/editor/RichTextEditor";
 import { ImagePicker } from "@/components/forms/ImagePicker";
 import { TagInput } from "@/components/forms/TagInput";
+import { AuditLine } from "@/components/ui/AuditLine";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { DraftBanner } from "@/components/ui/DraftBanner";
 import { Field, Input, Select, Textarea } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
@@ -25,6 +37,7 @@ const toLocalInput = (iso: string | null): string => {
 
 interface FormState {
   title: string;
+  authorName: string;
   slug: string;
   excerpt: string;
   contentHtml: string;
@@ -39,6 +52,7 @@ interface FormState {
 
 const EMPTY: FormState = {
   title: "",
+  authorName: "",
   slug: "",
   excerpt: "",
   contentHtml: "",
@@ -58,9 +72,27 @@ export const BlogEditorPage = () => {
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  const [form, setForm] = useState<FormState>(EMPTY);
+  const { user } = useAuth();
+
+  // A new post starts with the signed-in user's name so an admin writing their
+  // own post types nothing; when they're uploading someone else's, they change
+  // it. An existing post keeps whatever byline it was saved with.
+  const [form, setForm] = useState<FormState>(() => ({
+    ...EMPTY,
+    authorName: user?.name ?? "",
+  }));
+
+  // Names already used on other posts, offered as suggestions so the same
+  // person doesn't end up spelled three different ways.
+  const filters = useQuery({
+    queryKey: ["blogFilters"],
+    queryFn: getBlogFilters,
+    staleTime: 60_000,
+  });
   const [slugTouched, setSlugTouched] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const version = useVersionGuard();
 
   const existing = useQuery({
     queryKey: ["blog", id],
@@ -68,12 +100,13 @@ export const BlogEditorPage = () => {
     enabled: isEditing,
   });
 
-  // Hydrate the form once the post arrives.
-  useEffect(() => {
-    const post = existing.data;
-    if (!post) return;
+  // Seed the form once the post arrives. Done during render rather than in an
+  // effect so the empty form is never painted first -- see useSeedFromRecord.
+  if (useSeedFromRecord(existing.data)) {
+    const post = existing.data!;
     setForm({
       title: post.title,
+      authorName: post.author?.name ?? "",
       slug: post.slug,
       excerpt: post.excerpt ?? "",
       contentHtml: post.contentHtml,
@@ -86,8 +119,13 @@ export const BlogEditorPage = () => {
       seo: post.seo ?? {},
     });
     setSlugTouched(true);
+    // The version this form is based on. Sent back on save so a colleague's
+    // edit in the meantime is refused rather than overwritten.
+    version.seen(post.updatedAt);
+    // Seeding is not an edit: leaving this out makes the unsaved-changes guard
+    // fire on a post the user has only opened.
     setDirty(false);
-  }, [existing.data]);
+  }
 
   const patch = (changes: Partial<FormState>) => {
     setForm((current) => ({ ...current, ...changes }));
@@ -95,12 +133,16 @@ export const BlogEditorPage = () => {
   };
 
   // Warn before losing unsaved work on tab close / reload.
-  useEffect(() => {
-    if (!dirty) return;
-    const handler = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [dirty]);
+  // Covers both exits: closing the tab and navigating inside the app. The old
+  // beforeunload-only version silently lost work on a sidebar click.
+  const blocker = useUnsavedChanges(dirty);
+
+  // Snapshot the form locally while it's dirty, so a crash or a discarded
+  // navigation doesn't take the work with it.
+  const { draft, clearDraft } = useFormDraft("blog", id, form, {
+    enabled: dirty,
+    savedAt: existing.data?.updatedAt,
+  });
 
   const effectiveSlug = useMemo(
     () => (slugTouched ? form.slug : slugify(form.title)),
@@ -108,9 +150,13 @@ export const BlogEditorPage = () => {
   );
 
   const save = useMutation({
-    mutationFn: async () => {
+    // `force` is passed explicitly rather than read from the guard's state:
+    // the retry fires in the same render as the prompt closing, so clearing
+    // the expectation there would not be visible here yet.
+    mutationFn: async (options?: { force?: boolean }) => {
       const payload = {
         title: form.title.trim(),
+        author: { name: form.authorName.trim() },
         slug: effectiveSlug || undefined,
         excerpt: form.excerpt.trim() || undefined,
         contentHtml: form.contentHtml,
@@ -123,6 +169,7 @@ export const BlogEditorPage = () => {
           : null,
         featured: form.featured,
         seo: form.seo,
+        expectedUpdatedAt: options?.force ? null : version.expected,
       };
 
       return isEditing ? updateBlog(id!, payload) : createBlog(payload);
@@ -130,12 +177,17 @@ export const BlogEditorPage = () => {
     onSuccess: (post) => {
       toast.success(isEditing ? "Post updated" : "Post created");
       setDirty(false);
+      clearDraft();
+      // Now based on what the server just stored, so the next save is guarded
+      // again even if this one was a deliberate overwrite.
+      version.seen(post.updatedAt);
 
       // Re-seed from the server: sanitization can change the HTML, and the slug
       // may have been de-duplicated. Show the author what visitors will get.
       setForm((current) => ({
         ...current,
         contentHtml: post.contentHtml,
+        authorName: post.author?.name ?? "",
         slug: post.slug,
         excerpt: post.excerpt ?? "",
         publishedAt: toLocalInput(post.publishedAt),
@@ -144,13 +196,22 @@ export const BlogEditorPage = () => {
       void queryClient.invalidateQueries({ queryKey: ["blogs"] });
       if (!isEditing) navigate(`/blogs/${post._id}/edit`, { replace: true });
     },
-    onError: (error) => toast.error(errorMessage(error, "Could not save")),
+    onError: (error) => {
+      // A lost-update rejection opens the conflict prompt instead; a toast
+      // would be the wrong shape for a question that needs an answer.
+      if (version.caught(error)) return;
+      toast.error(errorMessage(error, "Could not save"));
+    },
   });
 
   const canSave =
     form.title.trim().length > 0 &&
     form.contentHtml.replace(/<[^>]*>/g, "").trim().length > 0 &&
     !save.isPending;
+
+  // Cmd/Ctrl+S. Gated on the same condition as the button, so the shortcut
+  // can never submit something the button would refuse.
+  useSaveShortcut(() => save.mutate(), canSave);
 
   if (isEditing && existing.isPending) {
     return (
@@ -170,6 +231,18 @@ export const BlogEditorPage = () => {
 
   return (
     <div className="space-y-4">
+      {draft && (
+        <DraftBanner
+          savedAt={draft.savedAt}
+          onRestore={() => {
+            setForm(draft.data);
+            setDirty(true);
+            clearDraft();
+          }}
+          onDiscard={clearDraft}
+        />
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Link
@@ -187,7 +260,29 @@ export const BlogEditorPage = () => {
           )}
         </div>
 
+        {/*
+          Who uploaded the post, as opposed to the Author field, which is
+          whoever wrote it. The two are often different people.
+        */}
+        <AuditLine
+          createdBy={existing.data?.createdBy}
+          updatedBy={existing.data?.updatedBy}
+          createdAt={existing.data?.createdAt}
+          updatedAt={existing.data?.updatedAt}
+          className="w-full text-xs text-slate-400"
+        />
+
         <div className="flex items-center gap-2">
+          {isEditing && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setHistoryOpen(true)}
+            >
+              <HistoryIcon className="h-4 w-4" />
+              History
+            </Button>
+          )}
           {isEditing && form.status !== "draft" && (
             <a
               href={`${PUBLIC_SITE_URL}/blog/${form.slug}`}
@@ -317,6 +412,22 @@ export const BlogEditorPage = () => {
 
           <section className="space-y-3 rounded-xl bg-white p-4 ring-1 ring-slate-200">
             <h2 className="text-sm font-semibold text-slate-900">Organisation</h2>
+            <Field
+              label="Author"
+              hint="Whoever wrote the post — not necessarily you."
+            >
+              <Input
+                list="blog-authors"
+                value={form.authorName}
+                placeholder="Full name"
+                onChange={(event) => patch({ authorName: event.target.value })}
+              />
+              <datalist id="blog-authors">
+                {(filters.data?.authors ?? []).map((a) => (
+                  <option key={a.name} value={a.name} />
+                ))}
+              </datalist>
+            </Field>
             <Field label="Category">
               <Input
                 value={form.category}
@@ -376,6 +487,33 @@ export const BlogEditorPage = () => {
           </section>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={blocker.state === "blocked"}
+        title="Leave without saving?"
+        description="Your changes on this page will be lost."
+        confirmLabel="Discard changes"
+        onCancel={() => blocker.reset?.()}
+        onConfirm={() => blocker.proceed?.()}
+      />
+
+      <VersionControls
+        type="blog"
+        id={id}
+        version={version}
+        saving={save.isPending}
+        onForce={() => save.mutate({ force: true })}
+        historyOpen={historyOpen}
+        onCloseHistory={() => setHistoryOpen(false)}
+        onRestored={() => {
+          // Refetching gives a new object, which re-runs the render-phase seed
+          // above and repoints the version guard at what was stored.
+          void queryClient.invalidateQueries({ queryKey: ["blog", id] });
+          void queryClient.invalidateQueries({ queryKey: ["blogs"] });
+          setDirty(false);
+          clearDraft();
+        }}
+      />
     </div>
   );
 };

@@ -47,7 +47,10 @@ export const useImageUpload = () => {
       // query string off the signed URL.
       return publicUrl;
     } catch (error) {
-      throw new Error(errorMessage(error, "Upload failed"));
+      // cause keeps the original axios/S3 failure attached. Without it the
+      // only thing left is our own summary, and the reason an upload actually
+      // failed -- a 403 from the bucket, say -- is gone for good.
+      throw new Error(errorMessage(error, "Upload failed"), { cause: error });
     } finally {
       setProgress(null);
     }

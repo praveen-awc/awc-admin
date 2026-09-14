@@ -12,18 +12,59 @@
 @plugin "@tailwindcss/typography";
 
 @theme {
-  --color-brand-50: #eef4ff;
-  --color-brand-100: #d9e6ff;
-  --color-brand-200: #bcd3ff;
-  --color-brand-300: #8eb6ff;
-  --color-brand-400: #598eff;
-  --color-brand-500: #3366ff;
-  --color-brand-600: #1d45f5;
-  --color-brand-700: #1734e1;
-  --color-brand-800: #192db6;
-  --color-brand-900: #1a2c8f;
+  /*
+   * Brand scale is Tailwind's blue, whose 600 is #2563eb -- the exact accent
+   * the public site already uses for links, icons, active chips and CTAs.
+   * (It previously held an invented blue that matched neither the site nor the
+   * logo.) 50 is #eff6ff, the same tint the site's blue panels use.
+   */
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+
+  /* The site's dark surface (Contact, Highlights), used here for the sidebar. */
+  --color-ink-900: #1e1d28;
+  --color-ink-800: #2a2836;
+
+  /*
+   * The red from the AWC logo. Close to red-600, so destructive buttons barely
+   * shift -- the point is that the red is now the brand's rather than an
+   * arbitrary one.
+   */
+  --color-danger: #e31e24;
+  --color-danger-dark: #c4171c;
 
   --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+}
+
+/*
+ * Tailwind v4 dropped `button, [role="button"] { cursor: pointer }` from
+ * preflight to match the native browser default. The public site is on v3,
+ * where that rule still exists -- this restores the same behaviour here so the
+ * two apps feel identical.
+ *
+ * It lives in @layer base so utilities still win: Button.tsx and
+ * EditorToolbar.tsx set `disabled:cursor-not-allowed`, and that must override.
+ */
+@layer base {
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+
+  /* Copied from v3's preflight: a disabled control is not clickable. Covers
+     buttons that have no cursor utility of their own (e.g. BlockEditor's
+     move up/down arrows). */
+  :disabled {
+    cursor: default;
+  }
 }
 
 html,

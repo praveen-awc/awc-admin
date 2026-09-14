@@ -1,4 +1,5 @@
-import { api, type ApiEnvelope } from "@/lib/api";
+import type { AuditActor } from "@/components/ui/AuditLine";
+import { api, stripEmpty, type ApiEnvelope, type ListQuery } from "@/lib/api";
 import type { Block } from "@/components/forms/BlockEditor";
 
 export interface CaseStudyHero {
@@ -18,6 +19,12 @@ export interface CaseStudyListItem {
   casetype?: string;
   hero?: Pick<CaseStudyHero, "title" | "logo">;
   createdAt: string;
+  /**
+   * Populated by the admin detail endpoints. Absent on records written
+   * before the field existed -- AuditLine renders those without a name.
+   */
+  createdBy?: AuditActor | string | null;
+  updatedBy?: AuditActor | string | null;
   updatedAt: string;
 }
 
@@ -37,17 +44,9 @@ export interface CaseStudyInput {
   meta?: { title?: string; description?: string; keywords?: string[] };
 }
 
-const stripEmpty = (params: Record<string, unknown>) =>
-  Object.fromEntries(
-    Object.entries(params).filter(([, value]) => value !== "" && value != null)
-  );
-
-export const listCaseStudies = async (params: {
-  page?: number;
-  limit?: number;
-  q?: string;
-  casetype?: string;
-}) => {
+export const listCaseStudies = async (
+  params: ListQuery & { casetype?: string }
+) => {
   const { data } = await api.get<ApiEnvelope<CaseStudyListItem[]>>(
     "/admin/casestudies",
     { params: stripEmpty(params) }

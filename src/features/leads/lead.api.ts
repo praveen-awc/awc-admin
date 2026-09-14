@@ -1,4 +1,5 @@
-import { api, type ApiEnvelope } from "@/lib/api";
+import type { AuditActor } from "@/components/ui/AuditLine";
+import { api, stripEmpty, type ApiEnvelope, type ListQuery } from "@/lib/api";
 
 export const LEAD_STATUSES = [
   "new",
@@ -19,23 +20,22 @@ export interface Lead {
   companyName: string;
   message: string;
   newsletter: boolean;
-  status: LeadStatus;
+  /** Optional for the same reason as Application.status -- see that comment. */
+  status?: LeadStatus;
   notes?: string;
   createdAt: string;
+  /**
+   * Populated by the admin detail endpoints. Absent on records written
+   * before the field existed -- AuditLine renders those without a name.
+   */
+  createdBy?: AuditActor | string | null;
+  updatedBy?: AuditActor | string | null;
   updatedAt: string;
 }
 
-const stripEmpty = (params: Record<string, unknown>) =>
-  Object.fromEntries(
-    Object.entries(params).filter(([, value]) => value !== "" && value != null)
-  );
-
-export const listLeads = async (params: {
-  page?: number;
-  limit?: number;
-  q?: string;
-  status?: string;
-}) => {
+export const listLeads = async (
+  params: ListQuery & { status?: string; newsletter?: string }
+) => {
   const { data } = await api.get<ApiEnvelope<Lead[]>>("/admin/leads", {
     params: stripEmpty(params),
   });
@@ -61,7 +61,12 @@ export const deleteLead = async (id: string): Promise<void> => {
 };
 
 /** See downloadApplicationsCsv -- the blob route is required for cookie auth. */
-export const downloadLeadsCsv = async (params: { status?: string }) => {
+export const downloadLeadsCsv = async (params: {
+  status?: string;
+  newsletter?: string;
+  from?: string;
+  to?: string;
+}) => {
   const response = await api.get("/admin/leads/export", {
     params: stripEmpty(params),
     responseType: "blob",

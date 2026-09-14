@@ -1,14 +1,11 @@
 import {
-  Briefcase,
-  BriefcaseBusiness,
-  FileText,
+  Activity,
   LayoutDashboard,
-  Mail,
-  Newspaper,
   Shield,
-  Users,
+  Trash2,
   type LucideIcon,
 } from "lucide-react";
+import { MODULES } from "@/config/modules";
 import type { AdminRole } from "@/auth/auth.api";
 
 export interface NavItem {
@@ -25,6 +22,12 @@ export interface NavSection {
   items: NavItem[];
 }
 
+/**
+ * Route, label and icon come from MODULES so the sidebar and the dashboard can
+ * never disagree; only what's specific to the sidebar -- grouping, unread
+ * badges, role gating -- is spelled out here. Dashboard and Users aren't
+ * content modules, so they keep their own entries.
+ */
 export const NAV: NavSection[] = [
   {
     label: "Overview",
@@ -32,32 +35,25 @@ export const NAV: NavSection[] = [
   },
   {
     label: "Content",
-    items: [
-      { to: "/blogs", icon: FileText, label: "Blog" },
-      { to: "/news", icon: Newspaper, label: "News & Events" },
-      { to: "/case-studies", icon: Briefcase, label: "Case Studies" },
-    ],
+    items: [{ ...MODULES.blogs }, { ...MODULES.news }, { ...MODULES.caseStudies }],
   },
   {
     label: "Recruitment",
     items: [
-      { to: "/jobs", icon: BriefcaseBusiness, label: "Jobs" },
-      {
-        to: "/applications",
-        icon: Users,
-        label: "Applications",
-        badge: "applications",
-      },
+      { ...MODULES.jobs },
+      { ...MODULES.applications, badge: "applications" },
     ],
   },
   {
     label: "Inbox",
-    items: [
-      { to: "/leads", icon: Mail, label: "Contact Leads", badge: "leads" },
-    ],
+    items: [{ ...MODULES.leads, badge: "leads" }],
   },
   {
     label: "Admin",
-    items: [{ to: "/settings/users", icon: Shield, label: "Users", role: "admin" }],
+    items: [
+      { to: "/settings/users", icon: Shield, label: "Users", role: "admin" },
+      { to: "/activity", icon: Activity, label: "Activity", role: "admin" },
+      { to: "/trash", icon: Trash2, label: "Trash", role: "admin" },
+    ],
   },
 ];

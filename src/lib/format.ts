@@ -38,6 +38,13 @@ export const formatRelative = (value?: string | null): string => {
   return formatDate(value);
 };
 
-/** Title-cases a status slug for display: "shortlisted" -> "Shortlisted". */
-export const titleCase = (value: string): string =>
-  value.charAt(0).toUpperCase() + value.slice(1);
+/**
+ * Title-cases a status slug for display: "shortlisted" -> "Shortlisted".
+ *
+ * Tolerates missing values rather than throwing. Records written by an older
+ * deployment can be missing fields this UI expects, and a display helper
+ * blowing up takes the whole page down with it -- see the status fallbacks in
+ * the application and lead lists.
+ */
+export const titleCase = (value?: string | null): string =>
+  value ? value.charAt(0).toUpperCase() + value.slice(1) : "";

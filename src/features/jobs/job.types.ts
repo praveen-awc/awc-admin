@@ -1,3 +1,4 @@
+import type { AuditActor } from "@/components/ui/AuditLine";
 /** Mirrors awc-backend/src/models/Job.ts */
 export interface JobListItem {
   _id: string;
@@ -12,6 +13,12 @@ export interface JobListItem {
   isActive: boolean;
   postedAt: string;
   createdAt: string;
+  /**
+   * Populated by the admin detail endpoints. Absent on records written
+   * before the field existed -- AuditLine renders those without a name.
+   */
+  createdBy?: AuditActor | string | null;
+  updatedBy?: AuditActor | string | null;
   updatedAt: string;
   /** Added by the list endpoint via one grouped aggregation. */
   applicationCount: number;
@@ -46,4 +53,6 @@ export interface JobInput {
   mandatorySkills: string[];
   requirements: string[];
   isActive: boolean;
+  /** See BlogInput.expectedUpdatedAt -- the lost-update guard. */
+  expectedUpdatedAt?: string | null;
 }

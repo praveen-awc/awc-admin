@@ -1,4 +1,5 @@
-import { api, type ApiEnvelope } from "@/lib/api";
+import type { AuditActor } from "@/components/ui/AuditLine";
+import { api, stripEmpty, type ApiEnvelope, type ListQuery } from "@/lib/api";
 import type { Block } from "@/components/forms/BlockEditor";
 
 export type NewsStatus = "draft" | "published";
@@ -13,6 +14,12 @@ export interface NewsListItem {
   status: NewsStatus;
   publishedAt: string | null;
   createdAt: string;
+  /**
+   * Populated by the admin detail endpoints. Absent on records written
+   * before the field existed -- AuditLine renders those without a name.
+   */
+  createdBy?: AuditActor | string | null;
+  updatedBy?: AuditActor | string | null;
   updatedAt: string;
 }
 
@@ -38,19 +45,11 @@ export interface NewsInput {
   items: Block[];
   status: NewsStatus;
   seo?: NewsItem["seo"];
+  /** See BlogInput.expectedUpdatedAt -- the lost-update guard. */
+  expectedUpdatedAt?: string | null;
 }
 
-const stripEmpty = (params: Record<string, unknown>) =>
-  Object.fromEntries(
-    Object.entries(params).filter(([, value]) => value !== "" && value != null)
-  );
-
-export const listNews = async (params: {
-  page?: number;
-  limit?: number;
-  q?: string;
-  status?: string;
-}) => {
+export const listNews = async (params: ListQuery & { status?: string }) => {
   const { data } = await api.get<ApiEnvelope<NewsListItem[]>>("/admin/news", {
     params: stripEmpty(params),
   });

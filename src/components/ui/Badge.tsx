@@ -1,5 +1,4 @@
 import { cn } from "@/lib/cn";
-import type { BlogStatus } from "@/features/blogs/blog.types";
 
 const TONES = {
   slate: "bg-slate-100 text-slate-700 ring-slate-200",
@@ -29,27 +28,3 @@ export const Badge = ({
     {children}
   </span>
 );
-
-/**
- * A post is "scheduled" in the database until its publishedAt passes -- there
- * is no cron flipping it to published. So the label has to be derived from the
- * timestamp, not read straight off `status`.
- */
-export const statusLabel = (
-  status: BlogStatus,
-  publishedAt: string | null
-): { label: string; tone: BadgeTone } => {
-  if (status === "draft") return { label: "Draft", tone: "slate" };
-
-  const isFuture = publishedAt ? new Date(publishedAt) > new Date() : false;
-
-  if (status === "scheduled") {
-    return isFuture
-      ? { label: "Scheduled", tone: "amber" }
-      : { label: "Published", tone: "green" };
-  }
-
-  return isFuture
-    ? { label: "Scheduled", tone: "amber" }
-    : { label: "Published", tone: "green" };
-};

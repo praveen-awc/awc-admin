@@ -12,6 +12,7 @@ import type { AdminRole } from "@/auth/auth.api";
 import { useAuth } from "@/auth/useAuth";
 import { errorMessage } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
+import { useListControls } from "@/hooks/useListParams";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -28,13 +29,24 @@ export const UserListPage = () => {
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  const [page, setPage] = useState(1);
-  const [q, setQ] = useState("");
+  const {
+    params: filters,
+    page,
+    setPage,
+    setSearch,
+    limit,
+    setLimit,
+    sort,
+  } = useListControls(["q"] as const);
+  const { q } = filters;
+
   const [creating, setCreating] = useState(false);
   const [resetting, setResetting] = useState<AdminUserRow | null>(null);
   const [pendingDelete, setPendingDelete] = useState<AdminUserRow | null>(null);
 
-  const params = { page, limit: 20, q };
+  // No date range here: an admin list is a handful of rows, and filtering
+  // colleagues by the date their account was made is not a thing anyone does.
+  const params = { page, limit, q, sort: sort.field, order: sort.order };
   const query = useQuery({
     queryKey: ["users", params],
     queryFn: () => listUsers(params),
@@ -87,6 +99,7 @@ export const UserListPage = () => {
     {
       key: "name",
       header: "Name",
+      sortField: "name",
       cell: (row) => (
         <>
           <span className="font-medium text-slate-900">{row.name}</span>
@@ -100,6 +113,7 @@ export const UserListPage = () => {
     {
       key: "role",
       header: "Role",
+      sortField: "role",
       cell: (row) => (
         <Select
           className="w-32"
@@ -120,6 +134,7 @@ export const UserListPage = () => {
     {
       key: "status",
       header: "Status",
+      sortField: "isActive",
       cell: (row) =>
         row.isActive ? (
           <Badge tone="green">Active</Badge>
@@ -130,6 +145,8 @@ export const UserListPage = () => {
     {
       key: "lastLogin",
       header: "Last sign-in",
+      sortField: "lastLoginAt",
+      defaultOrder: "desc",
       cell: (row) => formatDateTime(row.lastLoginAt),
     },
     {
@@ -194,10 +211,7 @@ export const UserListPage = () => {
       <SearchBox
         value={q}
         placeholder="Search name or email"
-        onChange={(value) => {
-          setQ(value);
-          setPage(1);
-        }}
+        onChange={setSearch}
       />
 
       {query.isPending ? (
@@ -215,12 +229,16 @@ export const UserListPage = () => {
           columns={columns}
           rows={users}
           rowKey={(row) => row._id}
+          sort={sort}
           footer={
             meta && (
               <Pagination
                 page={meta.page}
                 totalPages={meta.totalPages}
                 total={meta.total}
+                noun="user"
+                limit={limit}
+                onLimitChange={setLimit}
                 onChange={setPage}
               />
             )

@@ -1,30 +1,28 @@
 import { NavLink } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/auth/useAuth";
-import { getStats } from "@/features/stats/stats.api";
+import { useAdminStats } from "@/features/stats/useAdminStats";
 import { NAV } from "./navConfig";
+// White mark, not the colour one: the colour logo's "Passion to excel" tagline
+// is dark navy and disappears against the sidebar.
+import whiteLogo from "@/assets/logos/WhiteLogo.svg";
 
 export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
   const { user } = useAuth();
 
-  // Unread counts. A failure here must not break navigation, so the badge
-  // simply does not render.
-  const stats = useQuery({
-    queryKey: ["stats"],
-    queryFn: getStats,
-    staleTime: 60_000,
-  });
+  // Unread counts, from the shared polled query -- so the badges now keep
+  // themselves current instead of only moving when the admin does something.
+  // A failure here must not break navigation, so the badge simply does not
+  // render.
+  const stats = useAdminStats();
 
   const badgeCount = (key: "applications" | "leads"): number =>
     stats.data?.[key]?.new ?? 0;
 
   return (
-    <nav className="flex h-full flex-col gap-6 overflow-y-auto p-4">
-      <div className="px-2">
-        <span className="text-sm font-semibold tracking-tight text-slate-900">
-          AWC Admin
-        </span>
+    <nav className="flex h-full flex-col gap-6 overflow-y-auto p-4 text-slate-300">
+      <div className="px-2 py-1">
+        <img src={whiteLogo} alt="AWC" className="h-9 w-auto" />
       </div>
 
       {NAV.map((section) => {
@@ -35,7 +33,7 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
 
         return (
           <div key={section.label}>
-            <p className="px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <p className="px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
               {section.label}
             </p>
             <ul className="mt-1.5 space-y-0.5">
@@ -52,15 +50,17 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
                         cn(
                           "flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm font-medium transition-colors",
                           isActive
-                            ? "bg-brand-50 text-brand-700"
-                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                            ? "bg-brand-600 text-white"
+                            : "text-slate-300 hover:bg-white/5 hover:text-white"
                         )
                       }
                     >
                       <Icon className="h-4 w-4 shrink-0" />
                       <span className="flex-1">{item.label}</span>
+                      {/* brand-500, not 600: against the dark rail the darker
+                          blue sinks into the background. */}
                       {count > 0 && (
-                        <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                        <span className="rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
                           {count > 99 ? "99+" : count}
                         </span>
                       )}

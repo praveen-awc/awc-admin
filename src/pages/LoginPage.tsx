@@ -3,8 +3,11 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/useAuth";
 import { errorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
-import { Field, Input } from "@/components/ui/Input";
+import { Field, Input, PasswordInput } from "@/components/ui/Input";
 import { FullPageSpinner } from "@/components/ui/Spinner";
+// Colour mark here, not the white one: the card is white, and the full logo
+// (red wordmark, navy swoosh, tagline) reads properly against it.
+import logo from "@/assets/logos/Awc_Logo.png";
 
 export const LoginPage = () => {
   const { status, signIn } = useAuth();
@@ -39,10 +42,10 @@ export const LoginPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <h1 className="text-lg font-semibold text-slate-900">AWC Admin</h1>
-        <p className="mt-1 text-sm text-slate-500">
+    <div className="flex min-h-screen items-center justify-center bg-ink-900 p-4">
+      <div className="w-full max-w-sm rounded-xl bg-white p-7 shadow-2xl">
+        <img src={logo} alt="AWC" className="h-11 w-auto" />
+        <p className="mt-5 text-sm text-slate-500">
           Sign in to manage site content.
         </p>
 
@@ -59,9 +62,8 @@ export const LoginPage = () => {
           </Field>
 
           <Field label="Password" htmlFor="password" required>
-            <Input
+            <PasswordInput
               id="password"
-              type="password"
               autoComplete="current-password"
               required
               value={password}
