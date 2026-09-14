@@ -16,7 +16,18 @@ customHeaders:
         value: 'camera=(), microphone=(), geolocation=()'
       # connect-src must list the API (cookie auth) and the S3 bucket
       # (presigned PUT uploads go straight from the browser).
+      #
+      # Both API origins are listed. api.awcsoftware.com is where this is
+      # heading -- it shares a site with the panel, so cookies work under plain
+      # SameSite=Lax. Until that custom domain exists the panel talks to API
+      # Gateway directly, and a CSP that named only the first one blocked the
+      # login request before it left the browser: the request showed as failed
+      # with 0 bytes transferred, which reads like the API being down rather
+      # than the page refusing to call it.
+      #
+      # Keeping both means the switch is one Amplify env var, with no CSP edit
+      # and no second round of this.
       - key: 'Content-Security-Policy'
-        value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://api.awcsoftware.com https://awc-s3-bucket.s3.ap-south-1.amazonaws.com https://awc-s3-pvt.s3.ap-south-1.amazonaws.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://api.awcsoftware.com https://mnji6yaik3.execute-api.ap-south-1.amazonaws.com https://awc-s3-bucket.s3.ap-south-1.amazonaws.com https://awc-s3-pvt.s3.ap-south-1.amazonaws.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
       - key: 'Server'
         value: 'awcsoftware'
